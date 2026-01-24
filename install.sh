@@ -58,8 +58,8 @@ apt-get update -qq
 
 echo -e "${YELLOW}[2/7]${NC} Installing dependencies..."
 
-# Install required packages
-PACKAGES=(
+# Core system packages (required)
+CORE_PACKAGES=(
     "redsocks"
     "iptables"
     "iptables-persistent"
@@ -68,20 +68,45 @@ PACKAGES=(
     "python3-gi"
     "python3-gi-cairo"
     "gir1.2-gtk-3.0"
-    "gir1.2-appindicator3-0.1"
+    "gir1.2-glib-2.0"
     "python3-pil"
+    "python3-cairo"
+    "libgirepository1.0-dev"
+    "gir1.2-notify-0.7"
 )
 
-for pkg in "${PACKAGES[@]}"; do
+# Try to install core packages
+for pkg in "${CORE_PACKAGES[@]}"; do
     if ! dpkg -l | grep -q "^ii  $pkg "; then
         echo "  Installing $pkg..."
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$pkg"
+        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$pkg" 2>/dev/null; then
+            echo -e "  ${YELLOW}⚠${NC} Warning: Could not install $pkg"
+        fi
     else
         echo "  ✓ $pkg already installed"
     fi
 done
 
-echo -e "${GREEN}✓${NC} All dependencies installed"
+# AppIndicator - try both old Ubuntu and new Debian packages
+echo "  Installing system tray support..."
+if dpkg -l | grep -q "^ii  gir1.2-appindicator3-0.1 "; then
+    echo "  ✓ gir1.2-appindicator3-0.1 already installed (Ubuntu)"
+elif dpkg -l | grep -q "^ii  gir1.2-ayatanaappindicator3-0.1 "; then
+    echo "  ✓ gir1.2-ayatanaappindicator3-0.1 already installed (Debian)"
+else
+    # Try Ubuntu package first
+    if DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gir1.2-appindicator3-0.1 2>/dev/null; then
+        echo "  ✓ Installed gir1.2-appindicator3-0.1 (Ubuntu)"
+    # Fall back to Debian Ayatana package
+    elif DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gir1.2-ayatanaappindicator3-0.1 2>/dev/null; then
+        echo "  ✓ Installed gir1.2-ayatanaappindicator3-0.1 (Debian)"
+    else
+        echo -e "  ${YELLOW}⚠${NC} Warning: Could not install system tray support"
+        echo "    GUI will work but system tray icon may not appear"
+    fi
+fi
+
+echo -e "${GREEN}✓${NC} Core dependencies installed"
 
 echo -e "${YELLOW}[3/7]${NC} Configuring redsocks..."
 
@@ -169,12 +194,22 @@ fi
 
 echo -e "${GREEN}✓${NC} GUI installed to application menu"
 
-echo -e "${YELLOW}[8/8]${NC} Installing PolicyKit actions (pkexec)..."
+echo -e "${YELLOW}[8/9]${NC} Installing PolicyKit actions (pkexec)..."
 
 # Install Polkit policy for pkexec prompts
 POLKIT_DIR="/usr/share/polkit-1/actions"
 install -m 0644 "$PROJECT_DIR/config/polkit/org.pdanetlinux.pkexec.policy" "$POLKIT_DIR/org.pdanetlinux.pkexec.policy"
 echo -e "${GREEN}✓${NC} Polkit actions installed"
+
+echo -e "${YELLOW}[9/9]${NC} Validating installation..."
+
+# Run dependency check as the real user
+if su - "$REAL_USER" -c "cd '$PROJECT_DIR' && python3 check_dependencies.py" > /tmp/pdanet_dep_check.log 2>&1; then
+    echo -e "${GREEN}✓${NC} All dependencies validated successfully"
+else
+    echo -e "${YELLOW}⚠${NC} Some dependencies may be missing"
+    echo "    Run 'python3 $PROJECT_DIR/check_dependencies.py' for details"
+fi
 
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════╗${NC}"
