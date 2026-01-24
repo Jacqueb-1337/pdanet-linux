@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.2.1] - 2026-01-24
+
+### 🔧 Bug Fixes & Compatibility
+
+#### Fixed
+- **Issue #2**: Fixed `ModuleNotFoundError: No module named 'gi.repository'` for users on Linux Mint 22
+  - Improved GTK dependency installation in installer script
+  - Added more comprehensive system package installation (python3-cairo, libgirepository1.0-dev, gir1.2-glib-2.0)
+  - Better error handling for missing dependencies
+
+- **Issue #1**: Added support for Debian's Ayatana AppIndicator (gir1.2-ayatanaappindicator3-0.1)
+  - Application now automatically detects and uses either Ubuntu's AppIndicator3 or Debian's AyatanaAppIndicator3
+  - Graceful fallback if neither is available (GUI works without system tray)
+  - Fixes compatibility with pure Debian-based distributions
+
+#### Added
+- **Dependency Validation Tool** (`check_dependencies.py`)
+  - Comprehensive dependency checker to help users troubleshoot installation issues
+  - Validates Python version, GTK bindings, GI modules, system packages, and commands
+  - Provides clear, actionable instructions for fixing missing dependencies
+  - Color-coded output for easy identification of issues
+  - Automatically run at end of installation
+
+#### Improved
+- **Documentation**: Added detailed troubleshooting section for GTK/dependency issues in README.md
+- **Installation**: Installer now validates dependencies after installation
+- **Manual Installation Instructions**: Updated with complete package list for both Ubuntu and Debian
+- **System Requirements**: Added explicit listing of all required system packages
+
+#### Technical Details
+- Updated `install.sh` to install both core and optional GTK packages
+- Modified `src/pdanet_gui_v2.py` to support both AppIndicator variants
+- Modified `src/gui/main_window.py` with same AppIndicator fallback logic
+- Installer now attempts Ubuntu packages first, then falls back to Debian equivalents
+
+### Compatibility
+- Tested on Linux Mint 22.2
+- Compatible with both Ubuntu-based and Debian-based distributions
+- Python 3.8+ required
+- GTK 3.0+ with PyGObject required
+
+---
+
 ## [2.2.0] - 2025-10-13
 
 ### 🔥 Major Feature Release

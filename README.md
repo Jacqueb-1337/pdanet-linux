@@ -8,7 +8,10 @@ Reverse-engineered Linux client for PdaNet+ USB/WiFi tethering with multi-layere
 
 PdaNet Linux provides system-wide internet connectivity through Android devices running PdaNet+. Unlike simple proxy configurations, this implementation uses transparent traffic redirection to ensure ALL applications use the tethered connection seamlessly.
 
-📘 Contributor guide: see [Repository Guidelines](AGENTS.md) for structure, tooling, and PR expectations.
+📘 **Quick Links:**
+- [Contributor Guide](AGENTS.md) - Repository structure, tooling, and PR expectations
+- [Dependency Troubleshooting](DEPENDENCY_TROUBLESHOOTING.md) - Fix installation and GTK dependency issues
+- [Changelog](CHANGELOG.md) - Version history and release notes
 
 **Primary Feature:** WiFi hotspot tethering with **6-layer aggressive carrier detection bypass** to hide tethering usage from mobile carriers.
 
@@ -54,9 +57,20 @@ PdaNet Linux provides system-wide internet connectivity through Android devices 
 ### Linux System
 - Debian/Ubuntu-based distribution (tested on Linux Mint 22.2)
 - Python 3.8+
-- GTK 3.0+
+- GTK 3.0+ with Python bindings (PyGObject)
 - Root/sudo access
 - iptables and redsocks packages
+- NetworkManager (for WiFi mode)
+
+**Required System Packages:**
+- `python3-gi`, `python3-gi-cairo` - Python GTK bindings
+- `gir1.2-gtk-3.0`, `gir1.2-glib-2.0` - GTK GObject introspection
+- `python3-cairo` - Cairo graphics bindings
+- `libgirepository1.0-dev` - GObject introspection development files
+- `gir1.2-appindicator3-0.1` (Ubuntu) OR `gir1.2-ayatanaappindicator3-0.1` (Debian) - System tray (optional)
+- `gir1.2-notify-0.7` - Desktop notifications (optional)
+- `redsocks` - Transparent SOCKS proxy redirector
+- `iptables`, `iptables-persistent` - Firewall rules
 
 ## Installation
 
@@ -83,8 +97,20 @@ The installer will:
 ```bash
 # Install system dependencies
 sudo apt-get update
-sudo apt-get install -y redsocks iptables python3-gi gir1.2-gtk-3.0 \
-  gir1.2-appindicator3-0.1 network-manager python3-pip
+
+# Core dependencies (required for all distributions)
+sudo apt-get install -y redsocks iptables iptables-persistent curl net-tools \
+  python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-glib-2.0 python3-cairo \
+  libgirepository1.0-dev network-manager python3-pip
+
+# System tray support - choose based on your distribution:
+# For Ubuntu/Linux Mint:
+sudo apt-get install -y gir1.2-appindicator3-0.1
+# OR for Debian:
+sudo apt-get install -y gir1.2-ayatanaappindicator3-0.1
+
+# Optional: Desktop notifications
+sudo apt-get install -y gir1.2-notify-0.7
 
 # Install Python dependencies
 pip install --break-system-packages -r requirements.txt
@@ -97,6 +123,9 @@ sudo cp config/redsocks.conf /etc/
 # Create sudoers entry
 echo "$USER ALL=(ALL) NOPASSWD: /usr/local/bin/pdanet-*" | \
   sudo tee /etc/sudoers.d/pdanet-linux
+
+# Verify installation
+python3 check_dependencies.py
 ```
 
 ## Usage
@@ -352,6 +381,64 @@ BLOCKED_DOMAINS=(
 ```
 
 ## Troubleshooting
+
+### Installation and Dependency Issues
+
+**Problem:** `ModuleNotFoundError: No module named 'gi.repository'`
+
+This error occurs when GTK Python bindings (PyGObject) are not properly installed or cannot be found.
+
+**Solutions:**
+
+1. **Run the dependency checker:**
+   ```bash
+   python3 check_dependencies.py
+   ```
+   This will show exactly which dependencies are missing.
+
+2. **Install missing GTK bindings:**
+   ```bash
+   # For Ubuntu/Linux Mint
+   sudo apt-get update
+   sudo apt-get install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 \
+     gir1.2-glib-2.0 python3-cairo libgirepository1.0-dev
+   
+   # For system tray support (Ubuntu)
+   sudo apt-get install -y gir1.2-appindicator3-0.1
+   
+   # OR for Debian-based systems (Ayatana AppIndicator)
+   sudo apt-get install -y gir1.2-ayatanaappindicator3-0.1
+   ```
+
+3. **For notifications support (optional):**
+   ```bash
+   sudo apt-get install -y gir1.2-notify-0.7
+   ```
+
+4. **Re-run the installer:**
+   ```bash
+   sudo ./install.sh
+   ```
+   The installer now handles both Ubuntu and Debian AppIndicator variants automatically.
+
+**Problem:** System tray icon not appearing
+
+The application uses system tray integration via AppIndicator. Different distributions use different packages:
+- **Ubuntu/Linux Mint:** `gir1.2-appindicator3-0.1`
+- **Debian:** `gir1.2-ayatanaappindicator3-0.1`
+
+The application will automatically detect and use whichever is available. If neither is installed, the GUI will still work but the system tray icon will not appear.
+
+**Problem:** Missing PolicyKit/pkexec prompts
+
+If you're not seeing password prompts when running privileged operations:
+```bash
+# Install PolicyKit
+sudo apt-get install -y policykit-1 policykit-1-gnome
+
+# Verify installation
+which pkexec
+```
 
 ### Connection Issues
 

@@ -25,15 +25,24 @@ except Exception:
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gdk, GLib, Gtk
 
-# Try to import AppIndicator3, but make it optional
+# Try to import AppIndicator3 (Ubuntu) or AyatanaAppIndicator3 (Debian), but make it optional
+HAS_APPINDICATOR = False
+AppIndicator3 = None
+
 try:
+    # Try Ubuntu's AppIndicator first
     gi.require_version("AppIndicator3", "0.1")
     from gi.repository import AppIndicator3
-
     HAS_APPINDICATOR = True
 except (ValueError, ImportError):
-    HAS_APPINDICATOR = False
-    AppIndicator3 = None
+    try:
+        # Fall back to Debian's Ayatana AppIndicator
+        gi.require_version("AyatanaAppIndicator3", "0.1")
+        from gi.repository import AyatanaAppIndicator3 as AppIndicator3
+        HAS_APPINDICATOR = True
+    except (ValueError, ImportError):
+        # Neither available - system tray will be disabled
+        pass
 
 # Try to import Notify for desktop notifications
 try:
