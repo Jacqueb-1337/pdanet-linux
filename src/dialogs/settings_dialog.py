@@ -639,24 +639,31 @@ class SettingsDialog(Gtk.Dialog):
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
         
         new_btn = Gtk.Button(label="New Profile")
-        new_btn.set_sensitive(False)  # TODO: Implement
+        new_btn.connect("clicked", self._on_new_profile)
         button_box.pack_start(new_btn, True, True, 0)
         
         edit_btn = Gtk.Button(label="Edit")
-        edit_btn.set_sensitive(False)  # TODO: Implement
+        edit_btn.connect("clicked", self._on_edit_profile)
+        self.profile_edit_btn = edit_btn
         button_box.pack_start(edit_btn, True, True, 0)
         
         delete_btn = Gtk.Button(label="Delete")
-        delete_btn.set_sensitive(False)  # TODO: Implement
+        delete_btn.connect("clicked", self._on_delete_profile)
+        self.profile_delete_btn = delete_btn
         button_box.pack_start(delete_btn, True, True, 0)
         
         import_btn = Gtk.Button(label="Import")
-        import_btn.set_sensitive(False)  # TODO: Implement
+        import_btn.connect("clicked", self._on_import_profile)
         button_box.pack_start(import_btn, True, True, 0)
         
         export_btn = Gtk.Button(label="Export")
-        export_btn.set_sensitive(False)  # TODO: Implement
+        export_btn.connect("clicked", self._on_export_profile)
+        self.profile_export_btn = export_btn
         button_box.pack_start(export_btn, True, True, 0)
+        
+        # Connect selection changed signal to enable/disable edit/delete buttons
+        selection = self.profile_treeview.get_selection()
+        selection.connect("changed", self._on_profile_selection_changed)
         
         box.pack_start(button_box, False, False, 0)
         
@@ -855,3 +862,286 @@ class SettingsDialog(Gtk.Dialog):
         dialog.format_secondary_text(message)
         dialog.run()
         dialog.destroy()
+    
+    # Profile Management Methods
+    
+    def _on_profile_selection_changed(self, selection):
+        """Handle profile selection changes"""
+        model, treeiter = selection.get_selected()
+        has_selection = treeiter is not None
+        
+        # Enable/disable buttons based on selection
+        self.profile_edit_btn.set_sensitive(has_selection)
+        self.profile_delete_btn.set_sensitive(has_selection)
+        self.profile_export_btn.set_sensitive(has_selection)
+    
+    def _on_new_profile(self, button):
+        """Create a new connection profile"""
+        dialog = Gtk.Dialog(
+            title="New Profile",
+            parent=self,
+            flags=Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OK, Gtk.ResponseType.OK
+        )
+        
+        content = dialog.get_content_area()
+        content.set_spacing(10)
+        content.set_border_width(10)
+        
+        # Profile name
+        name_label = Gtk.Label(label="Profile Name:")
+        name_label.set_halign(Gtk.Align.START)
+        content.pack_start(name_label, False, False, 0)
+        
+        name_entry = Gtk.Entry()
+        name_entry.set_placeholder_text("e.g., Home WiFi, Office USB")
+        content.pack_start(name_entry, False, False, 0)
+        
+        # Connection mode
+        mode_label = Gtk.Label(label="Connection Mode:")
+        mode_label.set_halign(Gtk.Align.START)
+        content.pack_start(mode_label, False, False, 0)
+        
+        mode_combo = Gtk.ComboBoxText()
+        mode_combo.append("usb", "USB Tethering")
+        mode_combo.append("wifi", "WiFi Hotspot")
+        mode_combo.set_active(0)
+        content.pack_start(mode_combo, False, False, 0)
+        
+        # SSID (for WiFi)
+        ssid_label = Gtk.Label(label="WiFi SSID (optional):")
+        ssid_label.set_halign(Gtk.Align.START)
+        content.pack_start(ssid_label, False, False, 0)
+        
+        ssid_entry = Gtk.Entry()
+        ssid_entry.set_placeholder_text("Android WiFi Hotspot Name")
+        content.pack_start(ssid_entry, False, False, 0)
+        
+        dialog.show_all()
+        response = dialog.run()
+        
+        if response == Gtk.ResponseType.OK:
+            profile_name = name_entry.get_text().strip()
+            if not profile_name:
+                self._show_error_dialog("Invalid Profile", "Profile name cannot be empty")
+                dialog.destroy()
+                return
+            
+            # Create profile with current settings
+            profile_settings = {
+                'mode': mode_combo.get_active_id(),
+                'ssid': ssid_entry.get_text().strip(),
+                'proxy_ip': self.proxy_ip_entry.get_text(),
+                'proxy_port': self.proxy_port_spin.get_value_as_int(),
+                'stealth_level': int(self.stealth_level_combo.get_active_id()),
+                'auto_reconnect': self.auto_reconnect_switch.get_active(),
+            }
+            
+            try:
+                self.config.add_profile(profile_name, profile_settings)
+                self._load_profiles()
+                self.logger.info(f"Created profile: {profile_name}")
+            except Exception as e:
+                self._show_error_dialog("Failed to Create Profile", str(e))
+        
+        dialog.destroy()
+    
+    def _on_edit_profile(self, button):
+        """Edit selected profile"""
+        selection = self.profile_treeview.get_selection()
+        model, treeiter = selection.get_selected()
+        
+        if not treeiter:
+            return
+        
+        profile_name = model[treeiter][0]
+        profile = self.config.get_profile(profile_name)
+        
+        if not profile:
+            self._show_error_dialog("Profile Not Found", f"Profile '{profile_name}' not found")
+            return
+        
+        dialog = Gtk.Dialog(
+            title=f"Edit Profile: {profile_name}",
+            parent=self,
+            flags=Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OK, Gtk.ResponseType.OK
+        )
+        
+        content = dialog.get_content_area()
+        content.set_spacing(10)
+        content.set_border_width(10)
+        
+        # Connection mode
+        mode_label = Gtk.Label(label="Connection Mode:")
+        mode_label.set_halign(Gtk.Align.START)
+        content.pack_start(mode_label, False, False, 0)
+        
+        mode_combo = Gtk.ComboBoxText()
+        mode_combo.append("usb", "USB Tethering")
+        mode_combo.append("wifi", "WiFi Hotspot")
+        mode_combo.set_active_id(profile.get('mode', 'usb'))
+        content.pack_start(mode_combo, False, False, 0)
+        
+        # SSID
+        ssid_label = Gtk.Label(label="WiFi SSID (optional):")
+        ssid_label.set_halign(Gtk.Align.START)
+        content.pack_start(ssid_label, False, False, 0)
+        
+        ssid_entry = Gtk.Entry()
+        ssid_entry.set_text(profile.get('ssid', ''))
+        content.pack_start(ssid_entry, False, False, 0)
+        
+        dialog.show_all()
+        response = dialog.run()
+        
+        if response == Gtk.ResponseType.OK:
+            # Update profile
+            profile['mode'] = mode_combo.get_active_id()
+            profile['ssid'] = ssid_entry.get_text().strip()
+            
+            try:
+                self.config.add_profile(profile_name, profile)
+                self._load_profiles()
+                self.logger.info(f"Updated profile: {profile_name}")
+            except Exception as e:
+                self._show_error_dialog("Failed to Update Profile", str(e))
+        
+        dialog.destroy()
+    
+    def _on_delete_profile(self, button):
+        """Delete selected profile"""
+        selection = self.profile_treeview.get_selection()
+        model, treeiter = selection.get_selected()
+        
+        if not treeiter:
+            return
+        
+        profile_name = model[treeiter][0]
+        
+        # Confirm deletion
+        dialog = Gtk.MessageDialog(
+            transient_for=self,
+            flags=0,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.YES_NO,
+            text=f"Delete Profile '{profile_name}'?"
+        )
+        dialog.format_secondary_text(
+            "This action cannot be undone. Are you sure you want to delete this profile?"
+        )
+        
+        response = dialog.run()
+        dialog.destroy()
+        
+        if response == Gtk.ResponseType.YES:
+            if self.config.delete_profile(profile_name):
+                self._load_profiles()
+                self.logger.info(f"Deleted profile: {profile_name}")
+            else:
+                self._show_error_dialog("Failed to Delete", f"Could not delete profile '{profile_name}'")
+    
+    def _on_import_profile(self, button):
+        """Import profile from JSON file"""
+        dialog = Gtk.FileChooserDialog(
+            title="Import Profile",
+            parent=self,
+            action=Gtk.FileChooserAction.OPEN
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OPEN, Gtk.ResponseType.OK
+        )
+        
+        # Add file filter for JSON
+        filter_json = Gtk.FileFilter()
+        filter_json.set_name("JSON files")
+        filter_json.add_mime_type("application/json")
+        filter_json.add_pattern("*.json")
+        dialog.add_filter(filter_json)
+        
+        filter_all = Gtk.FileFilter()
+        filter_all.set_name("All files")
+        filter_all.add_pattern("*")
+        dialog.add_filter(filter_all)
+        
+        response = dialog.run()
+        filename = dialog.get_filename()
+        dialog.destroy()
+        
+        if response == Gtk.ResponseType.OK and filename:
+            try:
+                with open(filename, 'r') as f:
+                    profile_data = json.load(f)
+                
+                # Validate profile data
+                if 'name' not in profile_data:
+                    raise ValueError("Profile must have a 'name' field")
+                
+                profile_name = profile_data['name']
+                profile_settings = {k: v for k, v in profile_data.items() if k != 'name'}
+                
+                self.config.add_profile(profile_name, profile_settings)
+                self._load_profiles()
+                self.logger.info(f"Imported profile: {profile_name}")
+                
+            except Exception as e:
+                self._show_error_dialog("Import Failed", f"Could not import profile: {str(e)}")
+    
+    def _on_export_profile(self, button):
+        """Export selected profile to JSON file"""
+        selection = self.profile_treeview.get_selection()
+        model, treeiter = selection.get_selected()
+        
+        if not treeiter:
+            return
+        
+        profile_name = model[treeiter][0]
+        profile = self.config.get_profile(profile_name)
+        
+        if not profile:
+            self._show_error_dialog("Profile Not Found", f"Profile '{profile_name}' not found")
+            return
+        
+        dialog = Gtk.FileChooserDialog(
+            title="Export Profile",
+            parent=self,
+            action=Gtk.FileChooserAction.SAVE
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_SAVE, Gtk.ResponseType.OK
+        )
+        
+        # Set default filename
+        dialog.set_current_name(f"{profile_name}.json")
+        
+        # Add file filter for JSON
+        filter_json = Gtk.FileFilter()
+        filter_json.set_name("JSON files")
+        filter_json.add_mime_type("application/json")
+        filter_json.add_pattern("*.json")
+        dialog.add_filter(filter_json)
+        
+        response = dialog.run()
+        filename = dialog.get_filename()
+        dialog.destroy()
+        
+        if response == Gtk.ResponseType.OK and filename:
+            try:
+                export_data = {'name': profile_name}
+                export_data.update(profile)
+                
+                with open(filename, 'w') as f:
+                    json.dump(export_data, f, indent=2)
+                
+                self.logger.info(f"Exported profile '{profile_name}' to {filename}")
+                
+            except Exception as e:
+                self._show_error_dialog("Export Failed", f"Could not export profile: {str(e)}")

@@ -398,6 +398,16 @@ class ConfigManager:
     def list_profiles(self):
         """List all profile names"""
         return list(self.profiles.keys())
+    
+    def get_all_profiles(self):
+        """Get all profiles with their full data"""
+        result = {}
+        for name, payload in self.profiles.items():
+            profile_data = payload.get("settings", {}).copy()
+            profile_data['name'] = name
+            profile_data['created'] = payload.get('created', '')
+            result[name] = profile_data
+        return result
 
     # Compatibility helper for older tests
     def get_profiles(self):

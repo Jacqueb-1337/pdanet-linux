@@ -207,8 +207,16 @@ class DataUsageDashboard(Gtk.Box):
         if not self.config.get("enable_data_warnings", True):
             return
         
-        # TODO: Show desktop notification
+        # Show desktop notification
         self.logger.warning(f"Data usage warning: {message}")
+        
+        # Try to get the main window to send notification
+        try:
+            toplevel = self.get_toplevel()
+            if hasattr(toplevel, 'show_notification'):
+                toplevel.show_notification(title, message, urgency="normal")
+        except Exception as e:
+            self.logger.debug(f"Could not send notification: {e}")
     
     def _on_reset_session(self, button):
         """Reset session counter"""
