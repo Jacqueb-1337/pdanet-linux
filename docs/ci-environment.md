@@ -15,12 +15,15 @@ sudo apt-get install -y \
   imagemagick \
   gir1.2-gtk-3.0 \
   gir1.2-appindicator3-0.1 \
+  gir1.2-ayatanaappindicator3-0.1 \
   python3-gi \
   python3-gi-cairo \
   iptables \
   redsocks \
   curl
 ```
+
+**Note:** Installing both AppIndicator variants ensures compatibility with both Ubuntu and Debian-based CI environments.
 
 ## Python Tooling
 

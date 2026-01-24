@@ -118,9 +118,13 @@ git clone https://github.com/user/pdanet-linux.git
 cd pdanet-linux
 
 # 2. Install system dependencies
+# Try Ubuntu packages first
 sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 \
                  gir1.2-appindicator3-0.1 libcairo2-dev \
                  redsocks iptables-persistent
+
+# If AppIndicator fails (on Debian), use Ayatana instead:
+# sudo apt install gir1.2-ayatanaappindicator3-0.1
 
 # 3. Create Python virtual environment
 python3 -m venv venv

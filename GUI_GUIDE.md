@@ -163,7 +163,14 @@ python3 -c "import gi; gi.require_version('Gtk', '3.0'); from gi.repository impo
 
 If error, reinstall dependencies:
 ```bash
+# For Ubuntu/Linux Mint
 sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-appindicator3-0.1
+
+# OR for Debian
+sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1
+
+# Verify with dependency checker
+python3 check_dependencies.py
 ```
 
 ### Connection Button Doesn't Work
