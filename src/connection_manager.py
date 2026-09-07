@@ -88,6 +88,13 @@ class ConnectionManager:
         self.proxy_available = False
         self.last_error = None
 
+        # Recover an already-running native USB tunnel when the GUI is
+        # restarted while PdaNet remains connected.
+        if Path("/sys/class/net/pdanet0").exists():
+            self.state = ConnectionState.CONNECTED
+            self.current_mode = "usb"
+            self.current_interface = "pdanet0"
+
         # Auto-reconnect state
         self.auto_reconnect_enabled = False
         self.reconnect_attempts = 0
@@ -423,6 +430,13 @@ class ConnectionManager:
     def detect_interface(self):
         """Detect active network interface using NetworkManager D-Bus or fallback to nmcli"""
         try:
+            # Native PdaNet USB mode creates a TUN interface. It is not a
+            # NetworkManager Ethernet/RNDIS device.
+            if self.current_mode == "usb" and Path("/sys/class/net/pdanet0").exists():
+                self.current_interface = "pdanet0"
+                self.logger.ok("PdaNet USB tunnel detected: pdanet0")
+                return "pdanet0"
+
             # First, try robust D-Bus method
             if self.nm_client.available():
                 return self._detect_interface_dbus()
@@ -436,6 +450,11 @@ class ConnectionManager:
     def _detect_interface_dbus(self):
         """Detect interface using NetworkManager D-Bus API"""
         try:
+            if self.current_mode == "usb" and Path("/sys/class/net/pdanet0").exists():
+                self.current_interface = "pdanet0"
+                self.logger.ok("PdaNet USB tunnel detected: pdanet0")
+                return "pdanet0"
+
             if self.current_mode in ["iphone", "wifi"]:
                 # For WiFi/iPhone mode, find active WiFi interface
                 wifi_device = self.nm_client.get_connected_wifi_device()
@@ -515,6 +534,8 @@ class ConnectionManager:
     # ------------------------------------------------------------------
     def _detect_usb_interface(self):
         try:
+            if Path("/sys/class/net/pdanet0").exists():
+                return "pdanet0"
             result = subprocess.run(
                 ["ip", "link", "show"], check=False, capture_output=True, text=True, timeout=5
             )
@@ -671,25 +692,13 @@ class ConnectionManager:
                     self.logger.error(f"Input validation failed: {e}")
                     return
                 
-                # Step 1: Detect interface (for USB mode)
+                # USB mode is established by pdanet-connect. PdaNet+ does not
+                # expose an RNDIS/usb0 interface and it does not provide the
+                # HTTP proxy assumed by the old implementation. The connect
+                # script creates pdanet0 after completing the ADB protocol
+                # handshake with the phone.
                 if mode == "usb":
-                    interface = self.detect_interface()
-                    if not interface:
-                        self._handle_error_with_code(
-                            "interface_not_found",
-                            "No USB interface detected",
-                            {"mode": mode}
-                        )
-                        return
-
-                    # Step 2: Validate proxy
-                    if not self.validate_proxy():
-                        self._handle_error_with_code(
-                            "proxy_not_accessible",
-                            "Proxy not accessible",
-                            {"mode": mode, "interface": interface}
-                        )
-                        return
+                    self.logger.info("USB mode will create the native pdanet0 ADB tunnel")
 
                 # Step 2b: For iPhone/WiFi mode, validate SSID
                 if mode in ["iphone", "wifi"] and not ssid:
@@ -723,6 +732,16 @@ class ConnectionManager:
                 success = self._execute_connection_script(script, mode, ssid, password)
                 
                 if success:
+                    if mode == "usb":
+                        if Path("/sys/class/net/pdanet0").exists():
+                            self.current_interface = "pdanet0"
+                        else:
+                            self._handle_error_with_code(
+                                "interface_not_found",
+                                "PdaNet USB tunnel did not create pdanet0",
+                                {"mode": mode}
+                            )
+                            return
                     self._set_state(ConnectionState.CONNECTED)
                     self.current_failures = 0  # Reset failure counter on success
                     self.logger.ok(f"{mode.upper()} connection established successfully")
@@ -797,8 +816,13 @@ class ConnectionManager:
     def _disconnect_thread(self):
         """Disconnection thread"""
         try:
-            # SECURITY FIX: Use dynamically found script path
-            script = self.disconnect_script
+            # Use the disconnect script that matches the active connection mode.
+            if self.current_mode == "wifi":
+                script = self.wifi_disconnect_script
+            elif self.current_mode == "iphone":
+                script = self.iphone_disconnect_script
+            else:
+                script = self.disconnect_script
             if not script:
                 self._handle_error_with_code(
                     "disconnect_script_not_found",

@@ -466,47 +466,70 @@ class FirstRunWizard(Gtk.Assistant):
             )
     
     def _on_test_connection(self, button):
-        """Test USB connection"""
+        """Test the real PdaNet USB transport."""
         self.test_progress.show()
         self.test_progress.pulse()
         self.test_status.set_text("Testing connection...")
-        
-        # Simulate test (in real implementation, would actually test)
+
         def finish_test():
-            # Check for USB interface
             try:
-                result = subprocess.run(
-                    ["ip", "link", "show"],
-                    capture_output=True,
-                    text=True
-                )
-                
-                # Look for common Android USB interface names
-                if any(name in result.stdout for name in ["usb0", "rndis", "enp"]):
+                if shutil.which("adb") is None:
                     self.test_status.set_markup(
-                        '<span foreground="#00FF00"><b>✓ Connection test passed!</b>\n'
-                        'USB interface detected.</span>'
+                        '<span foreground="#FF0000"><b>ADB is not installed</b>\n'
+                        'Install the adb package, then run this test again.</span>'
+                    )
+                    self.set_page_complete(self.test_page, True)
+                    return False
+
+                devices = subprocess.run(
+                    ["adb", "devices"], capture_output=True, text=True, timeout=5
+                )
+                authorized = any(
+                    line.rstrip().endswith("\tdevice")
+                    for line in devices.stdout.splitlines()[1:]
+                )
+
+                service_ready = False
+                if authorized:
+                    sockets = subprocess.run(
+                        ["adb", "shell", "cat", "/proc/net/tcp", "/proc/net/tcp6"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    service_ready = any(
+                        ":2223" in line.upper() and " 0A " in line
+                        for line in sockets.stdout.splitlines()
+                    )
+
+                if authorized and service_ready:
+                    self.test_status.set_markup(
+                        '<span foreground="#00FF00"><b>Connection test passed!</b>\n'
+                        'Android is authorized and PdaNet+ USB mode is ready.</span>'
                     )
                     self.test_connection_success = True
-                    self.set_page_complete(self.test_page, True)
+                elif authorized:
+                    self.test_status.set_markup(
+                        '<span foreground="#FFFF00"><b>Android detected</b>\n'
+                        'Open PdaNet+ and enable Activate USB Mode.\n'
+                        'You can skip this test and connect later.</span>'
+                    )
                 else:
                     self.test_status.set_markup(
-                        '<span foreground="#FFFF00"><b>⚠ No USB interface detected</b>\n'
-                        'Make sure device is connected and PdaNet+ is running.\n'
-                        'You can skip this test and try connecting later.</span>'
+                        '<span foreground="#FFFF00"><b>Android not authorized</b>\n'
+                        'Connect the phone, enable USB debugging, and approve this computer.\n'
+                        'You can skip this test and connect later.</span>'
                     )
-                    self.set_page_complete(self.test_page, True)  # Allow skip
+                self.set_page_complete(self.test_page, True)
             except Exception as e:
                 self.test_status.set_markup(
-                    f'<span foreground="#FF0000"><b>✗ Test failed</b>\n{str(e)}</span>'
+                    f'<span foreground="#FF0000"><b>Test failed</b>\n{str(e)}</span>'
                 )
-                self.set_page_complete(self.test_page, True)  # Allow skip
-            
-            self.test_progress.hide()
+                self.set_page_complete(self.test_page, True)
+            finally:
+                self.test_progress.hide()
             return False
-        
-        GLib.timeout_add(1000, finish_test)
-    
+
+        GLib.timeout_add(250, finish_test)
+
     def _on_prepare(self, assistant, page):
         """Called when moving to a new page"""
         # Run checks automatically on requirements page

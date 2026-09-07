@@ -13,7 +13,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;36m'
 NC='\033[0m' # No Color
 
-PROJECT_DIR="/home/wtyler/pdanet-linux"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+PROJECT_DIR="$(dirname "$SCRIPT_PATH")"
 
 echo -e "${BLUE}"
 echo "╔════════════════════════════════════════╗"
@@ -81,6 +82,13 @@ echo -e "${YELLOW}[4/6]${NC} Removing convenience commands..."
 rm -f /usr/local/bin/pdanet-connect
 rm -f /usr/local/bin/pdanet-disconnect
 rm -f /usr/local/bin/pdanet-stealth
+rm -f /usr/local/bin/pdanet-wifi-connect
+rm -f /usr/local/bin/pdanet-wifi-disconnect
+rm -f /usr/local/bin/pdanet-iphone-connect
+rm -f /usr/local/bin/pdanet-iphone-disconnect
+rm -f /usr/local/bin/pdanet-gui-v2
+rm -f /usr/share/applications/pdanet-linux.desktop
+rm -f /usr/share/polkit-1/actions/org.pdanetlinux.pkexec.policy
 
 echo -e "${GREEN}✓${NC} Commands removed"
 

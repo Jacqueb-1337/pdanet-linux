@@ -65,6 +65,7 @@ CORE_PACKAGES=(
     "iptables-persistent"
     "curl"
     "net-tools"
+    "adb"
     "python3-gi"
     "python3-gi-cairo"
     "gir1.2-gtk-3.0"
@@ -174,6 +175,9 @@ ln -sf "$PROJECT_DIR/src/pdanet_gui_v2.py" /usr/local/bin/pdanet-gui-v2
 
 # Make scripts executable
 chmod +x "$PROJECT_DIR/src/pdanet_gui_v2.py"
+chmod +x "$PROJECT_DIR/src/pdanet_usb_tunnel.py"
+chmod +x "$PROJECT_DIR/pdanet-connect"
+chmod +x "$PROJECT_DIR/pdanet-disconnect"
 chmod +x "$PROJECT_DIR/pdanet-wifi-connect"
 chmod +x "$PROJECT_DIR/pdanet-wifi-disconnect"
 chmod +x "$PROJECT_DIR/pdanet-iphone-connect"
@@ -184,7 +188,7 @@ echo -e "${GREEN}✓${NC} Commands installed to /usr/local/bin"
 echo -e "${YELLOW}[7/8]${NC} Installing GUI desktop launcher..."
 
 # Install desktop file
-cp "$PROJECT_DIR/config/pdanet-linux.desktop" /usr/share/applications/pdanet-linux.desktop
+cp "$PROJECT_DIR/config/pdanet-linux-v2.desktop" /usr/share/applications/pdanet-linux.desktop
 chmod 644 /usr/share/applications/pdanet-linux.desktop
 
 # Update desktop database

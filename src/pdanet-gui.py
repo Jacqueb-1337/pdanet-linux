@@ -10,8 +10,12 @@ gi.require_version("AppIndicator3", "0.1")
 import subprocess
 import threading
 import time
+from pathlib import Path
 
 from gi.repository import AppIndicator3, Gdk, GLib, Gtk
+
+
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 
 class PdaNetGUI(Gtk.Window):
@@ -299,7 +303,7 @@ class PdaNetGUI(Gtk.Window):
                 if self.connected:
                     # Disconnect
                     subprocess.run(
-                        ["sudo", "/home/wtyler/pdanet-linux/pdanet-disconnect"], check=True
+                        ["sudo", str(PROJECT_DIR / "pdanet-disconnect")], check=True
                     )
                     GLib.idle_add(
                         self.show_notification, "Disconnected", "PdaNet connection closed"
@@ -307,7 +311,7 @@ class PdaNetGUI(Gtk.Window):
                 else:
                     # Connect
                     result = subprocess.run(
-                        ["sudo", "/home/wtyler/pdanet-linux/pdanet-connect"],
+                        ["sudo", str(PROJECT_DIR / "pdanet-connect")],
                         check=False,
                         capture_output=True,
                         text=True,
@@ -335,7 +339,7 @@ class PdaNetGUI(Gtk.Window):
             try:
                 cmd = "enable" if enabled else "disable"
                 subprocess.run(
-                    ["sudo", "/home/wtyler/pdanet-linux/scripts/stealth-mode.sh", cmd], check=True
+                    ["sudo", str(PROJECT_DIR / "scripts" / "stealth-mode.sh"), cmd], check=True
                 )
                 GLib.idle_add(self.update_status)
             except Exception as e:

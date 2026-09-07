@@ -11,7 +11,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-PROJECT_DIR="/home/wtyler/pdanet-linux"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+PROJECT_DIR="$(dirname "$SCRIPT_PATH")"
 
 echo -e "${GREEN}PdaNet WiFi Disconnector${NC}"
 echo "======================================"

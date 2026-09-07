@@ -8,7 +8,7 @@ import os
 import sys
 
 # Ensure system GTK bindings are used instead of the test stub in src/gi
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 _removed_src = False
 if sys.path and sys.path[0] == _SCRIPT_DIR:
     sys.path.pop(0)
@@ -63,7 +63,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Add src directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from config_manager import CONFIG_DIR, get_config
 from connection_manager import ConnectionState, get_connection_manager
@@ -248,6 +248,11 @@ class PdaNetGUI(Gtk.Window):
 
         # Load settings
         self.load_settings()
+
+        # Synchronize controls immediately. This matters when the GUI starts
+        # while an existing pdanet0 USB tunnel is already active.
+        GLib.idle_add(self.update_display)
+        GLib.idle_add(self.update_button_states)
         
         # Check for first run and show wizard if needed
         self.check_first_run()
@@ -481,7 +486,7 @@ class PdaNetGUI(Gtk.Window):
         # Status items
         self.status_state_label = self.create_metric_row("STATUS", "● INACTIVE")
         self.status_interface_label = self.create_metric_row("INTERFACE", "NOT DETECTED")
-        self.status_endpoint_label = self.create_metric_row("ENDPOINT", "192.168.49.1:8000")
+        self.status_endpoint_label = self.create_metric_row("ENDPOINT", "MODE DEPENDENT")
         self.status_uptime_label = self.create_metric_row("UPTIME", "00:00:00")
         self.status_stealth_label = self.create_metric_row("STEALTH", "DISABLED")
 
@@ -1077,8 +1082,6 @@ class PdaNetGUI(Gtk.Window):
                     data = json.load(f)
                 override = data.get("connection_state")
                 if override:
-                    from connection_manager import ConnectionState
-
                     mapping = {
                         "DISCONNECTED": ConnectionState.DISCONNECTED,
                         "CONNECTING": ConnectionState.CONNECTING,
@@ -1116,6 +1119,16 @@ class PdaNetGUI(Gtk.Window):
         # Update interface
         interface = self.connection.current_interface or "NOT DETECTED"
         self.status_interface_label.get_children()[1].set_text(interface)
+
+        if self.connection.current_mode == "usb":
+            endpoint = "ADB / phone TCP 8739"
+        elif self.connection.current_mode == "wifi":
+            endpoint = f"{self.config.get('proxy_ip', '192.168.49.1')}:{self.config.get('proxy_port', 8000)}"
+        elif self.connection.current_mode == "iphone":
+            endpoint = "WiFi hotspot"
+        else:
+            endpoint = "MODE DEPENDENT"
+        self.status_endpoint_label.get_children()[1].set_text(endpoint)
 
         # Update uptime
         if is_connected:
@@ -1397,9 +1410,9 @@ class PdaNetGUI(Gtk.Window):
     def update_network_quality(self):
         """Calculate and update network quality indicator with color coding"""
         # Get metrics
-        latency = self.stats.get_average_latency()
-        packet_loss = self.stats.get_packet_loss()
-        uptime = self.stats.get_uptime()
+        latency = self.stats.get_average_latency() or 0
+        packet_loss = self.stats.get_current_packet_loss() or 0
+        uptime = self.stats.get_uptime() or 0
         
         # Calculate quality score (0-100)
         quality_score = 100
@@ -1620,7 +1633,7 @@ class PdaNetGUI(Gtk.Window):
             first_run = self.config.get("first_run", True)
             if first_run:
                 # Show first run wizard
-                wizard = FirstRunWizard(parent=self)
+                wizard = FirstRunWizard(parent_window=self)
                 response = wizard.run()
                 
                 if response == Gtk.ResponseType.OK:

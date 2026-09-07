@@ -179,9 +179,9 @@ sudo ./scripts/wifi-stealth.sh disable wlan0
 - **Level 2 (Standard):** TTL + IPv6 blocking + DNS redirection
 - **Level 3 (Aggressive):** All 6 layers enabled (RECOMMENDED)
 
-### USB Tethering Mode (Legacy)
+### USB Tethering Mode
 
-USB mode provides basic connectivity with limited stealth capabilities. Use WiFi mode for maximum carrier bypass effectiveness.
+USB mode uses ADB to connect to PdaNet+'s desktop service and creates a native `pdanet0` TUN interface on Linux. USB debugging must be enabled and the Linux computer must be authorized on the Android device. Use WiFi mode when you specifically need the WiFi carrier-bypass features.
 
 #### 1. Android Setup
 ```
@@ -213,16 +213,13 @@ sudo pdanet-stealth disable
 ```
 Android Device (PdaNet+ app)
          |
-    [USB Cable] OR [WiFi Hotspot]
+    USB: ADB -> PdaNet desktop service -> pdanet0 TUN
+    OR
+    WiFi: PdaNet hotspot -> gateway/proxy path
          |
-    Proxy: 192.168.49.1:8000 (USB)
-    OR WiFi Gateway (WiFi)
+[WiFi Mode: optional bypass rules via iptables/sysctl]
          |
-[WiFi Mode: 6-layer bypass via iptables/sysctl]
-         |
-    redsocks (port 12345)
-         |
-    iptables NAT/mangle rules
+    Linux networking stack
          |
     All Linux Applications
 ```
@@ -232,7 +229,7 @@ Android Device (PdaNet+ app)
 **Connection Management:**
 - `connection_manager.py` - State machine (DISCONNECTED → CONNECTING → CONNECTED → DISCONNECTING)
 - `pdanet-wifi-connect` - WiFi hotspot connection script with NetworkManager integration
-- `pdanet-connect` - USB tethering connection script with interface auto-detection
+- `pdanet-connect` - USB tethering connection script using ADB and the native `pdanet0` TUN tunnel
 - `wifi-stealth.sh` - 6-layer carrier bypass implementation
 
 **GUI System:**
@@ -252,15 +249,14 @@ Android Device (PdaNet+ app)
 
 1. **Connection Establishment:**
    - GUI/CLI initiates connection request
-   - ConnectionManager validates interface availability
-   - NetworkManager connects to WiFi OR USB interface detection
-   - Validates proxy availability at 192.168.49.1:8000
+   - USB mode verifies an authorized ADB device and PdaNet+ USB service
+   - USB mode starts the native helper, completes the PdaNet desktop handshake, and creates `pdanet0`
+   - WiFi mode continues to use NetworkManager and its gateway/proxy path
 
 2. **Traffic Redirection:**
-   - iptables REDSOCKS chain redirects TCP traffic to redsocks (port 12345)
-   - redsocks forwards to PdaNet proxy via HTTP CONNECT
-   - Mangle table modifies TTL to 65 (carrier bypass)
-   - NAT table redirects DNS to gateway (prevent leaks)
+   - USB traffic is routed directly through the `pdanet0` TUN interface
+   - WiFi mode can use redsocks and iptables for its proxy and carrier-bypass path
+   - Mangle and DNS rules apply only where configured for the selected mode
 
 3. **Carrier Bypass (WiFi Mode):**
    - All outgoing packets get TTL 65 (Layer 1)

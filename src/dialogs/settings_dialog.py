@@ -281,7 +281,7 @@ class SettingsDialog(Gtk.Dialog):
         # Proxy section
         box.pack_start(create_section_header("Proxy Configuration"), False, False, 0)
         box.pack_start(
-            create_info_label("PdaNet proxy running on your Android device"),
+            create_info_label("Used by proxy-based WiFi modes. USB mode uses ADB/TUN and ignores these fields."),
             False, False, 0
         )
         

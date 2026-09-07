@@ -111,7 +111,7 @@ class StatsCollector:
             if self._logger:
                 self._logger.warning(f"Failed to save session history: {e}")
 
-    def update_bandwidth(self, interface="usb0"):
+    def update_bandwidth(self, interface="pdanet0"):
         """Update bandwidth statistics from network interface"""
         try:
             # Read interface statistics from /sys

@@ -171,7 +171,7 @@ class HighPerformanceStatsCollector:
             return []
     
     @timed_operation("bandwidth_update")
-    def update_bandwidth(self, interface: str = "usb0"):
+    def update_bandwidth(self, interface: str = "pdanet0"):
         """High-performance bandwidth update with optimized I/O"""
         update_start = time.time()
         

@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from widgets.circular_progress import CircularProgress
-from constants import *
+from constants import BYTES_PER_GB, BYTES_PER_KB, BYTES_PER_MB
 from logger import get_logger
 
 
@@ -120,7 +120,7 @@ class DataUsageDashboard(Gtk.Box):
         """Update display with current statistics"""
         try:
             # Get current session data
-            current_bytes = self.stats.total_bytes_received + self.stats.total_bytes_sent
+            current_bytes = self.stats.get_total_downloaded() + self.stats.get_total_uploaded()
             self.session_bytes = current_bytes
             
             # Update labels
