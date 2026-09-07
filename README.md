@@ -49,28 +49,29 @@ PdaNet Linux provides system-wide internet connectivity through Android devices 
 ## Requirements
 
 ### Android Device
-- PdaNet+ app installed (download from https://pdanet.co/)
+- PdaNet+ app installed
 - Android 5.0+ recommended
-- USB debugging enabled (optional but recommended)
-- WiFi hotspot capability OR USB tethering support
+- USB debugging enabled and the Linux computer authorized for USB mode
+- PdaNet+ "USB Tether" enabled for USB mode, or PdaNet WiFi hotspot for WiFi mode
 
 ### Linux System
-- Debian/Ubuntu-based distribution (tested on Linux Mint 22.2)
-- Python 3.8+
-- GTK 3.0+ with Python bindings (PyGObject)
+- Ubuntu/Linux Mint or another compatible apt-based distribution (tested on Linux Mint 22.2)
 - Root/sudo access
-- iptables and redsocks packages
-- NetworkManager (for WiFi mode)
+- ADB and TUN support for native PdaNet USB mode
+- NetworkManager and `iw` for WiFi mode
+- Python 3 with GTK 3 PyGObject bindings for the GUI
 
-**Required System Packages:**
-- `python3-gi`, `python3-gi-cairo` - Python GTK bindings
-- `gir1.2-gtk-3.0`, `gir1.2-glib-2.0` - GTK GObject introspection
-- `python3-cairo` - Cairo graphics bindings
-- `libgirepository1.0-dev` - GObject introspection development files
-- `gir1.2-appindicator3-0.1` (Ubuntu) OR `gir1.2-ayatanaappindicator3-0.1` (Debian) - System tray (optional)
-- `gir1.2-notify-0.7` - Desktop notifications (optional)
-- `redsocks` - Transparent SOCKS proxy redirector
-- `iptables`, `iptables-persistent` - Firewall rules
+**Direct System Packages:**
+- `adb`, `iproute2` - Native USB tunnel transport and routing
+- `network-manager`, `iw` - WiFi connection management
+- `python3`, `python3-gi`, `python3-gi-cairo` - Python and GTK bindings
+- `gir1.2-gtk-3.0`, `gir1.2-glib-2.0`, `python3-cairo`, `python3-pil` - GUI runtime
+- `policykit-1` - Privileged GUI actions
+- `redsocks`, `iptables`, `iptables-persistent` - WiFi/proxy routing and stealth features
+- `gir1.2-appindicator3-0.1` or `gir1.2-ayatanaappindicator3-0.1` - System tray support
+- `gir1.2-notify-0.7` - Desktop notifications
+
+The authoritative direct dependency list is `packaging/runtime-packages.txt`. The offline builder recursively collects the `.deb` dependencies of every package in that list.
 
 ## Installation
 
@@ -78,7 +79,7 @@ PdaNet Linux provides system-wide internet connectivity through Android devices 
 
 ```bash
 # Clone repository
-git clone https://github.com/wtyler2505/pdanet-linux.git
+git clone https://github.com/Jacqueb-1337/pdanet-linux.git
 cd pdanet-linux
 
 # Run installer (requires sudo)
@@ -86,11 +87,35 @@ sudo ./install.sh
 ```
 
 The installer will:
-- Install system dependencies (redsocks, iptables, NetworkManager, GTK3 bindings)
-- Install Python dependencies from requirements.txt
+- Install system dependencies, including ADB, NetworkManager, GTK3 bindings, redsocks, and iptables
 - Configure sudoers for password-less connection commands
-- Create desktop entry and system commands
-- Set up configuration directory at ~/.config/pdanet-linux/
+- Create the application-menu launcher and system commands
+- Validate the completed installation
+
+### Single-file Offline Install
+
+For machines with little or no Internet access, PdaNet Linux can be distributed as one self-extracting `.run` file containing the application and the complete recursive `.deb` dependency set.
+
+Build the bundle on an Internet-connected Ubuntu/Mint machine that uses the same Ubuntu package base and CPU architecture as the target:
+
+```bash
+./packaging/build-offline-bundle.sh
+```
+
+The finished file is written to `dist/`, for example:
+
+```text
+pdanet-linux-offline-noble-amd64-1d79d5a.run
+```
+
+Copy that one file to the offline computer and run:
+
+```bash
+chmod +x pdanet-linux-offline-*.run
+sudo ./pdanet-linux-offline-*.run
+```
+
+The offline installer refuses to use the network. It installs the bundled dependency packages first, then runs the normal PdaNet Linux installer in offline mode. Bundles are tied to an Ubuntu package base such as `noble` and an architecture such as `amd64` so incompatible system libraries are not mixed.
 
 ### Manual Installation
 

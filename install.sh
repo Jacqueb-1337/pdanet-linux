@@ -52,53 +52,62 @@ if [[ "$OS" != "linuxmint" ]] && [[ "$OS" != "ubuntu" ]]; then
     fi
 fi
 
-echo ""
-echo -e "${YELLOW}[1/7]${NC} Updating package lists..."
-apt-get update -qq
-
-echo -e "${YELLOW}[2/7]${NC} Installing dependencies..."
-
-# Core system packages (required)
-CORE_PACKAGES=(
-    "redsocks"
-    "iptables"
-    "iptables-persistent"
-    "curl"
-    "net-tools"
-    "adb"
-    "python3-gi"
-    "python3-gi-cairo"
-    "gir1.2-gtk-3.0"
-    "gir1.2-glib-2.0"
-    "python3-pil"
-    "python3-cairo"
-    "libgirepository1.0-dev"
-    "gir1.2-notify-0.7"
-)
-
-# Try to install core packages
-for pkg in "${CORE_PACKAGES[@]}"; do
-    if ! dpkg -l | grep -q "^ii  $pkg "; then
-        echo "  Installing $pkg..."
-        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$pkg" 2>/dev/null; then
-            echo -e "  ${YELLOW}⚠${NC} Warning: Could not install $pkg"
-        fi
-    else
-        echo "  ✓ $pkg already installed"
+OFFLINE_MODE=false
+for arg in "$@"; do
+    if [[ "$arg" == "--offline" ]]; then
+        OFFLINE_MODE=true
     fi
 done
 
+PACKAGES_FILE="$PROJECT_DIR/packaging/runtime-packages.txt"
+if [[ ! -f "$PACKAGES_FILE" ]]; then
+    echo -e "${RED}Error: Missing dependency list: $PACKAGES_FILE${NC}"
+    exit 1
+fi
+mapfile -t CORE_PACKAGES < <(grep -Ev '^[[:space:]]*(#|$)' "$PACKAGES_FILE")
+
+echo ""
+if [[ "$OFFLINE_MODE" == true ]]; then
+    echo -e "${YELLOW}[1/7]${NC} Offline mode: skipping package-list update"
+else
+    echo -e "${YELLOW}[1/7]${NC} Updating package lists..."
+    apt-get update -qq
+fi
+
+echo -e "${YELLOW}[2/7]${NC} Checking dependencies..."
+MISSING_PACKAGES=()
+for pkg in "${CORE_PACKAGES[@]}"; do
+    if dpkg -l | grep -q "^ii  $pkg "; then
+        echo "  ✓ $pkg already installed"
+    elif [[ "$OFFLINE_MODE" == true ]]; then
+        echo -e "  ${RED}✗${NC} $pkg is missing from the offline installation"
+        MISSING_PACKAGES+=("$pkg")
+    else
+        echo "  Installing $pkg..."
+        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$pkg" 2>/dev/null; then
+            echo -e "  ${YELLOW}⚠${NC} Warning: Could not install $pkg"
+            MISSING_PACKAGES+=("$pkg")
+        fi
+    fi
+done
+
+if [[ ${#MISSING_PACKAGES[@]} -gt 0 ]]; then
+    echo -e "${RED}Error: Required packages are missing: ${MISSING_PACKAGES[*]}${NC}"
+    exit 1
+fi
+
 # AppIndicator - try both old Ubuntu and new Debian packages
-echo "  Installing system tray support..."
+echo "  Checking system tray support..."
 if dpkg -l | grep -q "^ii  gir1.2-appindicator3-0.1 "; then
     echo "  ✓ gir1.2-appindicator3-0.1 already installed (Ubuntu)"
 elif dpkg -l | grep -q "^ii  gir1.2-ayatanaappindicator3-0.1 "; then
     echo "  ✓ gir1.2-ayatanaappindicator3-0.1 already installed (Debian)"
+elif [[ "$OFFLINE_MODE" == true ]]; then
+    echo -e "  ${YELLOW}⚠${NC} System tray package is not installed"
+    echo "    GUI will work but the tray icon may not appear"
 else
-    # Try Ubuntu package first
     if DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gir1.2-appindicator3-0.1 2>/dev/null; then
         echo "  ✓ Installed gir1.2-appindicator3-0.1 (Ubuntu)"
-    # Fall back to Debian Ayatana package
     elif DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gir1.2-ayatanaappindicator3-0.1 2>/dev/null; then
         echo "  ✓ Installed gir1.2-ayatanaappindicator3-0.1 (Debian)"
     else
@@ -107,7 +116,7 @@ else
     fi
 fi
 
-echo -e "${GREEN}✓${NC} Core dependencies installed"
+echo -e "${GREEN}✓${NC} Core dependencies ready"
 
 echo -e "${YELLOW}[3/7]${NC} Configuring redsocks..."
 

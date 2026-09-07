@@ -1,0 +1,47 @@
+name: Build offline bundles
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            base: jammy
+          - runner: ubuntu-24.04
+            base: noble
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build self-contained offline installer
+        run: |
+          chmod +x packaging/build-offline-bundle.sh packaging/install-offline.sh
+          ./packaging/build-offline-bundle.sh
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdanet-linux-offline-${{ matrix.base }}-amd64
+          path: dist/*.run
+          if-no-files-found: error
+
+      - name: Attach bundle to GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist/*.run --clobber
