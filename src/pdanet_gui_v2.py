@@ -1069,6 +1069,30 @@ class PdaNetGUI(Gtk.Window):
         self.header_time_label.set_text(now)
         return True
 
+    def update_bandwidth_graph(self):
+        """Render a compact live download/upload sparkline from interface counters."""
+        if not hasattr(self, "graph_buffer"):
+            return
+
+        rx_data, tx_data = self.stats.get_bandwidth_graph_data(seconds=40)
+        blocks = "▁▂▃▄▅▆▇█"
+
+        def sparkline(points):
+            values = [max(0.0, float(rate)) for _, rate in points][-40:]
+            if not values:
+                return "waiting for traffic..."
+            peak = max(values)
+            if peak <= 0:
+                return blocks[0] * len(values)
+            return "".join(
+                blocks[min(len(blocks) - 1, int((value / peak) * (len(blocks) - 1)))]
+                for value in values
+            )
+
+        self.graph_buffer.set_text(
+            f"↓ {sparkline(rx_data)}\n↑ {sparkline(tx_data)}"
+        )
+
     def update_display(self):
         """Update all display elements"""
         # Update time
@@ -1153,6 +1177,16 @@ class PdaNetGUI(Gtk.Window):
                 f"↓ {Format.format_bytes(total_dl)}  ↑ {Format.format_bytes(total_ul)}"
             )
 
+            latency = self.stats.get_current_latency()
+            loss = self.stats.get_current_packet_loss()
+            self.metric_latency_label.get_children()[1].set_text(
+                f"{latency:.0f} ms" if latency is not None else "-- ms"
+            )
+            self.metric_loss_label.get_children()[1].set_text(
+                f"{loss:.1f} %" if self.stats.probe_success_history else "-- %"
+            )
+            self.update_bandwidth_graph()
+
             # Check data usage warnings
             self.check_data_usage_warnings(total_dl, total_ul)
 
@@ -1161,7 +1195,11 @@ class PdaNetGUI(Gtk.Window):
         else:
             self.metric_download_label.get_children()[1].set_text("0.0 KB/s")
             self.metric_upload_label.get_children()[1].set_text("0.0 KB/s")
+            self.metric_latency_label.get_children()[1].set_text("-- ms")
+            self.metric_loss_label.get_children()[1].set_text("-- %")
             self.metric_total_label.get_children()[1].set_text("↓ 0B  ↑ 0B")
+            if hasattr(self, "graph_buffer"):
+                self.graph_buffer.set_text("waiting for connection...")
             self.sb_network.set_text("NET: 0.0 MB/s")
 
         # Update log

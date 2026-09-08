@@ -14,6 +14,8 @@ PROJECT_DIR="$(dirname "$SCRIPT_PATH")"
 HELPER="$PROJECT_DIR/src/pdanet_usb_tunnel.py"
 PIDFILE="/run/pdanet-linux-usb.pid"
 LOGFILE="/tmp/pdanet-linux-usb.log"
+WATCHDOG="$PROJECT_DIR/scripts/pdanet-watchdog.sh"
+WATCHDOG_PIDFILE="/run/pdanet-linux-watchdog.pid"
 
 if [[ $EUID -ne 0 ]]; then
     echo -e "${RED}Error: This command must run as root.${NC}"
@@ -71,12 +73,36 @@ if ! adb shell 'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null' | grep -qi ':2223 
 fi
 echo -e "${GREEN}✓${NC} PdaNet+ USB service detected"
 
-# If a healthy tunnel already exists, do not start a second copy.
+# If a tunnel already exists, only reuse it if it is actually carrying traffic
+# and DNS is working. Otherwise clean it up and rebuild it automatically.
 if [[ -f "$PIDFILE" ]]; then
     OLD_PID="$(cat "$PIDFILE" 2>/dev/null || true)"
     if [[ -n "$OLD_PID" ]] && kill -0 "$OLD_PID" 2>/dev/null && ip link show pdanet0 >/dev/null 2>&1; then
-        echo -e "${GREEN}✓${NC} PdaNet USB tunnel is already connected"
-        exit 0
+        if ip route get 1.1.1.1 2>/dev/null | grep -q 'dev pdanet0' \
+            && curl -k -sS --interface pdanet0 --connect-timeout 3 --max-time 6 https://1.1.1.1/cdn-cgi/trace >/dev/null 2>&1 \
+            && getent ahostsv4 example.com >/dev/null 2>&1; then
+            echo -e "${GREEN}✓${NC} PdaNet USB tunnel is already connected and healthy"
+            if [[ "${PDANET_SKIP_WATCHDOG:-0}" != "1" ]] && [[ -x "$WATCHDOG" ]]; then
+                WATCHDOG_RUNNING=false
+                if [[ -f "$WATCHDOG_PIDFILE" ]]; then
+                    WATCHDOG_PID="$(cat "$WATCHDOG_PIDFILE" 2>/dev/null || true)"
+                    if [[ -n "$WATCHDOG_PID" ]] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
+                        WATCHDOG_RUNNING=true
+                    else
+                        rm -f "$WATCHDOG_PIDFILE"
+                    fi
+                fi
+                if [[ "$WATCHDOG_RUNNING" != true ]]; then
+                    nohup "$WATCHDOG" >/dev/null 2>&1 &
+                    echo -e "${GREEN}✓${NC} Self-healing connection watchdog started"
+                fi
+            fi
+            exit 0
+        fi
+        echo -e "${YELLOW}Existing PdaNet tunnel is stale; rebuilding it automatically...${NC}"
+        kill "$OLD_PID" 2>/dev/null || true
+        sleep 0.5
+        kill -9 "$OLD_PID" 2>/dev/null || true
     fi
     rm -f "$PIDFILE"
 fi
@@ -173,6 +199,24 @@ else
     rm -f "$PIDFILE"
     ip link del pdanet0 >/dev/null 2>&1 || true
     exit 1
+fi
+
+# Keep route and DNS healthy after NetworkManager, hotel WiFi, resume, or a
+# transient phone-side stall changes networking underneath the tunnel.
+if [[ "${PDANET_SKIP_WATCHDOG:-0}" != "1" ]] && [[ -x "$WATCHDOG" ]]; then
+    WATCHDOG_RUNNING=false
+    if [[ -f "$WATCHDOG_PIDFILE" ]]; then
+        WATCHDOG_PID="$(cat "$WATCHDOG_PIDFILE" 2>/dev/null || true)"
+        if [[ -n "$WATCHDOG_PID" ]] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
+            WATCHDOG_RUNNING=true
+        else
+            rm -f "$WATCHDOG_PIDFILE"
+        fi
+    fi
+    if [[ "$WATCHDOG_RUNNING" != true ]]; then
+        nohup "$WATCHDOG" >/dev/null 2>&1 &
+        echo -e "${GREEN}✓${NC} Self-healing connection watchdog started"
+    fi
 fi
 
 echo

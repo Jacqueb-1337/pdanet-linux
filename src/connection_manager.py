@@ -150,6 +150,14 @@ class ConnectionManager:
         self.resource_manager.start_monitoring(interval=60)
         self.reliability_manager.start_monitoring()
 
+        # If the GUI starts while a native USB tunnel is already active, begin
+        # live statistics immediately instead of showing a permanently-zero
+        # dashboard until the next reconnect.
+        if self.state == ConnectionState.CONNECTED and self.current_interface:
+            self.stats.start_session()
+            self.stats.update_bandwidth(self.current_interface)
+            self.start_monitoring()
+
     def _run_privileged(self, argv, timeout=60, env=None):
         """
         Run a privileged command using PolicyKit (pkexec).
@@ -742,8 +750,18 @@ class ConnectionManager:
                                 {"mode": mode}
                             )
                             return
+                    elif not self.current_interface:
+                        self.detect_interface()
+
                     self._set_state(ConnectionState.CONNECTED)
                     self.current_failures = 0  # Reset failure counter on success
+
+                    # Start live counters after every successful connection.
+                    self.stats.start_session()
+                    if self.current_interface:
+                        self.stats.update_bandwidth(self.current_interface)
+                    self.start_monitoring()
+
                     self.logger.ok(f"{mode.upper()} connection established successfully")
                 else:
                     self._handle_error_with_code(
@@ -894,9 +912,10 @@ class ConnectionManager:
         """Monitor connection health"""
         while self.monitoring_active and self.state == ConnectionState.CONNECTED:
             try:
-                # Update bandwidth statistics
+                # Update bandwidth and usable-tunnel quality statistics.
                 if self.current_interface:
                     self.stats.update_bandwidth(self.current_interface)
+                    self.stats.update_connection_quality(self.current_interface)
 
                 # Update stealth status (P1-FUNC-8)
                 self.update_stealth_status()

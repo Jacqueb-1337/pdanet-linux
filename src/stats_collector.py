@@ -42,6 +42,8 @@ class StatsCollector:
         # Connection quality metrics
         self.latency_history = deque(maxlen=30)
         self.packet_loss_history = deque(maxlen=10)
+        self.probe_success_history = deque(maxlen=12)
+        self.last_quality_probe_time = 0
 
         # Interface tracking
         self.current_interface = None
@@ -50,7 +52,7 @@ class StatsCollector:
         self.last_update_time = 0
 
     def start_session(self):
-        """Start a new connection session"""
+        """Start a new connection session and reset interface baselines."""
         self.start_time = time.time()
         self.bytes_sent = 0
         self.bytes_received = 0
@@ -58,12 +60,31 @@ class StatsCollector:
         self.tx_history.clear()
         self.latency_history.clear()
         self.packet_loss_history.clear()
+        self.probe_success_history.clear()
+        self.last_quality_probe_time = 0
+        self.current_interface = None
+        self.last_rx_bytes = 0
+        self.last_tx_bytes = 0
+        self.last_update_time = 0
 
     def stop_session(self):
         """End current connection session and save to history"""
         if self.start_time:
             self.save_session_to_history()
         self.start_time = None
+
+    def reset(self):
+        """Reset live session counters while keeping the session active."""
+        self.bytes_sent = 0
+        self.bytes_received = 0
+        self.rx_history.clear()
+        self.tx_history.clear()
+        self.bytes_sent_history.clear()
+        self.bytes_received_history.clear()
+        self.last_rx_bytes = 0
+        self.last_tx_bytes = 0
+        self.last_update_time = 0
+        self.current_interface = None
 
     def save_session_to_history(self):
         """Save current session data to connection history"""
@@ -128,26 +149,33 @@ class StatsCollector:
 
             current_time = time.time()
 
-            if self.last_update_time > 0:
+            # A recreated TUN interface starts its byte counters from zero. Treat
+            # an interface change or counter rollback as a fresh baseline instead
+            # of producing negative or wildly inflated rates.
+            baseline_reset = (
+                self.current_interface != interface
+                or self.last_update_time <= 0
+                or rx_bytes < self.last_rx_bytes
+                or tx_bytes < self.last_tx_bytes
+            )
+
+            if not baseline_reset:
                 time_delta = current_time - self.last_update_time
+                if time_delta > 0:
+                    delta_rx = max(0, rx_bytes - self.last_rx_bytes)
+                    delta_tx = max(0, tx_bytes - self.last_tx_bytes)
+                    rx_rate = delta_rx / time_delta
+                    tx_rate = delta_tx / time_delta
 
-                # Calculate rates
-                rx_rate = (rx_bytes - self.last_rx_bytes) / time_delta if time_delta > 0 else 0
-                tx_rate = (tx_bytes - self.last_tx_bytes) / time_delta if time_delta > 0 else 0
+                    self.rx_history.append((current_time, rx_rate))
+                    self.tx_history.append((current_time, tx_rate))
+                    self.bytes_received += delta_rx
+                    self.bytes_sent += delta_tx
 
-                self.rx_history.append((current_time, rx_rate))
-                self.tx_history.append((current_time, tx_rate))
-
-                # Update totals
-                delta_rx = rx_bytes - self.last_rx_bytes
-                delta_tx = tx_bytes - self.last_tx_bytes
-                self.bytes_received += delta_rx
-                self.bytes_sent += delta_tx
-
-                self.bytes_received_history.append((current_time, self.bytes_received))
-                self.bytes_sent_history.append((current_time, self.bytes_sent))
-                self._trim_history(self.bytes_received_history)
-                self._trim_history(self.bytes_sent_history)
+                    self.bytes_received_history.append((current_time, self.bytes_received))
+                    self.bytes_sent_history.append((current_time, self.bytes_sent))
+                    self._trim_history(self.bytes_received_history)
+                    self._trim_history(self.bytes_sent_history)
 
             self.last_rx_bytes = rx_bytes
             self.last_tx_bytes = tx_bytes
@@ -239,6 +267,47 @@ class StatsCollector:
             if self._logger:
                 self._logger.error(f"Ping test error: {e}")
             return None
+
+    def update_connection_quality(self, interface="pdanet0", min_interval=5.0):
+        """Measure usable tunnel latency and probe loss without relying on ICMP."""
+        now = time.time()
+        if now - self.last_quality_probe_time < min_interval:
+            return self.get_current_latency(), self.get_current_packet_loss()
+        self.last_quality_probe_time = now
+
+        try:
+            result = subprocess.run(
+                [
+                    "curl", "-k", "-sS", "-o", "/dev/null",
+                    "--interface", interface,
+                    "--connect-timeout", "3", "--max-time", "5",
+                    "-w", "%{time_connect}",
+                    "https://1.1.1.1/cdn-cgi/trace",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=6,
+            )
+            success = result.returncode == 0
+            self.probe_success_history.append(success)
+            if success:
+                try:
+                    latency_ms = float(result.stdout.strip()) * 1000.0
+                    self.latency_history.append(latency_ms)
+                except (TypeError, ValueError):
+                    pass
+        except Exception as e:
+            self.probe_success_history.append(False)
+            if self._logger:
+                self._logger.debug(f"Tunnel quality probe error: {e}")
+
+        if self.probe_success_history:
+            failures = sum(1 for ok in self.probe_success_history if not ok)
+            loss_percent = failures * 100.0 / len(self.probe_success_history)
+            self.packet_loss_history.append(loss_percent)
+
+        return self.get_current_latency(), self.get_current_packet_loss()
 
     def get_current_latency(self):
         """Get most recent latency measurement"""

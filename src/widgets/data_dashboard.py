@@ -123,17 +123,20 @@ class DataUsageDashboard(Gtk.Box):
             current_bytes = self.stats.get_total_downloaded() + self.stats.get_total_uploaded()
             self.session_bytes = current_bytes
             
-            # Update labels
+            # Update labels. Daily/monthly totals include the live session so
+            # they move immediately instead of changing only after a restart.
+            live_daily = self.daily_bytes + self.session_bytes
+            live_monthly = self.monthly_bytes + self.session_bytes
             self.session_label.set_text(self._format_bytes(self.session_bytes))
-            self.daily_label.set_text(self._format_bytes(self.daily_bytes))
-            self.monthly_label.set_text(self._format_bytes(self.monthly_bytes))
+            self.daily_label.set_text(self._format_bytes(live_daily))
+            self.monthly_label.set_text(self._format_bytes(live_monthly))
             
             # Update progress meter
             threshold_bytes = self.config.get("data_warning_threshold_gb", 10) * BYTES_PER_GB
-            percentage = min(1.0, self.monthly_bytes / threshold_bytes) if threshold_bytes > 0 else 0
+            percentage = min(1.0, live_monthly / threshold_bytes) if threshold_bytes > 0 else 0
             
             self.progress_meter.set_percentage(percentage)
-            self.progress_meter.set_subtitle(self._format_bytes(self.monthly_bytes))
+            self.progress_meter.set_subtitle(self._format_bytes(live_monthly))
             
             # Check for warnings
             if percentage >= 0.9:

@@ -92,7 +92,18 @@ chmod +x "$INSTALL_ROOT/pdanet-connect" \
          "$INSTALL_ROOT/pdanet-iphone-connect" \
          "$INSTALL_ROOT/pdanet-iphone-disconnect" \
          "$INSTALL_ROOT/src/pdanet_gui_v2.py" \
-         "$INSTALL_ROOT/src/pdanet_usb_tunnel.py"
+         "$INSTALL_ROOT/src/pdanet_usb_tunnel.py" \
+         "$INSTALL_ROOT/scripts/pdanet-watchdog.sh"
+
+# If USB tethering is already active, enable the new self-healing watchdog
+# immediately. This avoids requiring a disconnect/reconnect after an update.
+if ip link show pdanet0 >/dev/null 2>&1 && [[ -f /run/pdanet-linux-usb.pid ]]; then
+    WATCHDOG_PID="$(cat /run/pdanet-linux-watchdog.pid 2>/dev/null || true)"
+    if [[ -z "$WATCHDOG_PID" ]] || ! kill -0 "$WATCHDOG_PID" 2>/dev/null; then
+        rm -f /run/pdanet-linux-watchdog.pid
+        nohup "$INSTALL_ROOT/scripts/pdanet-watchdog.sh" >/dev/null 2>&1 &
+    fi
+fi
 
 # Refresh files that are copied outside /opt by the full installer.
 if [[ -f "$INSTALL_ROOT/config/redsocks.conf" ]]; then
