@@ -8,6 +8,7 @@ WATCHDOG_PIDFILE="/run/pdanet-linux-watchdog.pid"
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 PROJECT_DIR="$(dirname "$SCRIPT_PATH")"
 DNS_HELPER="$PROJECT_DIR/scripts/pdanet-dns.sh"
+PACKAGEKIT_FIX="$PROJECT_DIR/scripts/pdanet-packagekit-route-mode.sh"
 
 if [[ $EUID -ne 0 ]]; then
     echo -e "${RED}Error: This command must run as root.${NC}"
@@ -60,6 +61,9 @@ if [[ -x "$DNS_HELPER" ]]; then
 elif command -v resolvectl >/dev/null 2>&1; then
     resolvectl revert pdanet0 >/dev/null 2>&1 || true
     resolvectl flush-caches >/dev/null 2>&1 || true
+fi
+if [[ -x "$PACKAGEKIT_FIX" ]]; then
+    "$PACKAGEKIT_FIX" --restore >/dev/null 2>&1 || true
 fi
 if ip route show default | grep -q 'dev pdanet0'; then
     ip route del default dev pdanet0 >/dev/null 2>&1 || true

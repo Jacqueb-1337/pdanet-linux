@@ -97,15 +97,12 @@ chmod +x "$INSTALL_ROOT/pdanet-connect" \
          "$INSTALL_ROOT/scripts/pdanet-dns.sh" \
          "$INSTALL_ROOT/scripts/pdanet-packagekit-route-mode.sh"
 
-# Make PackageKit use the real kernel default route instead of NetworkManager's
-# stale online/offline flag. This fixes Mint Software Manager over pdanet0.
-"$INSTALL_ROOT/scripts/pdanet-packagekit-route-mode.sh" || true
-
-# If USB tethering is already active, repair system DNS immediately and enable
-# the self-healing watchdog. This lets apt/PackageKit recover without requiring
-# a disconnect/reconnect after an update.
+# If USB tethering is already active, repair system DNS and make PackageKit use
+# the PdaNet-aware network monitor immediately. This avoids requiring a
+# disconnect/reconnect after an update.
 if ip link show pdanet0 >/dev/null 2>&1 && [[ -f /run/pdanet-linux-usb.pid ]]; then
     "$INSTALL_ROOT/scripts/pdanet-dns.sh" apply >/dev/null 2>&1 || true
+    "$INSTALL_ROOT/scripts/pdanet-packagekit-route-mode.sh" >/dev/null 2>&1 || true
     if command -v systemctl >/dev/null 2>&1; then
         systemctl restart packagekit.service >/dev/null 2>&1 || true
     fi
