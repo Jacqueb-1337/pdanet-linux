@@ -186,6 +186,9 @@ ln -sf "$PROJECT_DIR/src/pdanet_gui_v2.py" /usr/local/bin/pdanet-gui-v2
 chmod +x "$PROJECT_DIR/src/pdanet_gui_v2.py"
 chmod +x "$PROJECT_DIR/src/pdanet_usb_tunnel.py"
 chmod +x "$PROJECT_DIR/scripts/pdanet-watchdog.sh"
+chmod +x "$PROJECT_DIR/scripts/pdanet-dns.sh"
+chmod +x "$PROJECT_DIR/scripts/pdanet-packagekit-route-mode.sh"
+"$PROJECT_DIR/scripts/pdanet-packagekit-route-mode.sh" || true
 chmod +x "$PROJECT_DIR/pdanet-connect"
 chmod +x "$PROJECT_DIR/pdanet-disconnect"
 chmod +x "$PROJECT_DIR/pdanet-wifi-connect"

@@ -93,11 +93,24 @@ chmod +x "$INSTALL_ROOT/pdanet-connect" \
          "$INSTALL_ROOT/pdanet-iphone-disconnect" \
          "$INSTALL_ROOT/src/pdanet_gui_v2.py" \
          "$INSTALL_ROOT/src/pdanet_usb_tunnel.py" \
-         "$INSTALL_ROOT/scripts/pdanet-watchdog.sh"
+         "$INSTALL_ROOT/scripts/pdanet-watchdog.sh" \
+         "$INSTALL_ROOT/scripts/pdanet-dns.sh" \
+         "$INSTALL_ROOT/scripts/pdanet-packagekit-route-mode.sh"
 
-# If USB tethering is already active, enable the new self-healing watchdog
-# immediately. This avoids requiring a disconnect/reconnect after an update.
+# Make PackageKit use the real kernel default route instead of NetworkManager's
+# stale online/offline flag. This fixes Mint Software Manager over pdanet0.
+"$INSTALL_ROOT/scripts/pdanet-packagekit-route-mode.sh" || true
+
+# If USB tethering is already active, repair system DNS immediately and enable
+# the self-healing watchdog. This lets apt/PackageKit recover without requiring
+# a disconnect/reconnect after an update.
 if ip link show pdanet0 >/dev/null 2>&1 && [[ -f /run/pdanet-linux-usb.pid ]]; then
+    "$INSTALL_ROOT/scripts/pdanet-dns.sh" apply >/dev/null 2>&1 || true
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl restart packagekit.service >/dev/null 2>&1 || true
+    fi
+    command -v nmcli >/dev/null 2>&1 && nmcli networking connectivity check >/dev/null 2>&1 || true
+
     WATCHDOG_PID="$(cat /run/pdanet-linux-watchdog.pid 2>/dev/null || true)"
     if [[ -z "$WATCHDOG_PID" ]] || ! kill -0 "$WATCHDOG_PID" 2>/dev/null; then
         rm -f /run/pdanet-linux-watchdog.pid

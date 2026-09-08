@@ -5,6 +5,9 @@ set -Eeuo pipefail
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 PIDFILE="/run/pdanet-linux-usb.pid"
 WATCHDOG_PIDFILE="/run/pdanet-linux-watchdog.pid"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+PROJECT_DIR="$(dirname "$SCRIPT_PATH")"
+DNS_HELPER="$PROJECT_DIR/scripts/pdanet-dns.sh"
 
 if [[ $EUID -ne 0 ]]; then
     echo -e "${RED}Error: This command must run as root.${NC}"
@@ -52,7 +55,9 @@ if command -v adb >/dev/null 2>&1; then adb forward --remove tcp:18739 >/dev/nul
 echo -e "${GREEN}✓${NC} ADB forwarding removed"
 
 echo -e "${YELLOW}[3/3]${NC} Restoring normal routing..."
-if command -v resolvectl >/dev/null 2>&1; then
+if [[ -x "$DNS_HELPER" ]]; then
+    "$DNS_HELPER" restore >/dev/null 2>&1 || true
+elif command -v resolvectl >/dev/null 2>&1; then
     resolvectl revert pdanet0 >/dev/null 2>&1 || true
     resolvectl flush-caches >/dev/null 2>&1 || true
 fi

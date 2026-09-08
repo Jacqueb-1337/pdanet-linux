@@ -4,6 +4,7 @@ set -u
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_PATH")")"
 CONNECT="$PROJECT_DIR/pdanet-connect"
+DNS_HELPER="$PROJECT_DIR/scripts/pdanet-dns.sh"
 TUN_PIDFILE="/run/pdanet-linux-usb.pid"
 WATCHDOG_PIDFILE="/run/pdanet-linux-watchdog.pid"
 LOGFILE="/tmp/pdanet-linux-watchdog.log"
@@ -45,10 +46,8 @@ apply_route_and_dns() {
             log "Repaired PdaNet default route"
         fi
 
-        if command -v resolvectl >/dev/null 2>&1 && resolvectl status >/dev/null 2>&1; then
-            resolvectl dns pdanet0 1.1.1.1 1.0.0.1 8.8.8.8 >/dev/null 2>&1 || true
-            resolvectl domain pdanet0 '~.' >/dev/null 2>&1 || true
-            resolvectl default-route pdanet0 yes >/dev/null 2>&1 || true
+        if [[ -x "$DNS_HELPER" ]]; then
+            "$DNS_HELPER" apply >/dev/null 2>&1 || true
         fi
     fi
 }
@@ -65,6 +64,7 @@ restart_tunnel() {
         fi
         rm -f "$TUN_PIDFILE"
     fi
+    [[ -x "$DNS_HELPER" ]] && "$DNS_HELPER" restore >/dev/null 2>&1 || true
     ip link del pdanet0 >/dev/null 2>&1 || true
     adb forward --remove tcp:18739 >/dev/null 2>&1 || true
     sleep 1
@@ -116,18 +116,17 @@ while true; do
         continue
     fi
 
-    if getent ahostsv4 example.com >/dev/null 2>&1; then
+    if [[ -x "$DNS_HELPER" ]] && "$DNS_HELPER" check >/dev/null 2>&1; then
         dns_failures=0
     else
         dns_failures=$((dns_failures + 1))
-        log "DNS health check failed ($dns_failures/2), reapplying PdaNet DNS"
+        log "System DNS health check failed ($dns_failures/2), reapplying PdaNet DNS"
         apply_route_and_dns
-        command -v resolvectl >/dev/null 2>&1 && resolvectl flush-caches >/dev/null 2>&1 || true
         if (( dns_failures >= 2 )); then
             sleep 1
-            if getent ahostsv4 example.com >/dev/null 2>&1; then
+            if [[ -x "$DNS_HELPER" ]] && "$DNS_HELPER" check >/dev/null 2>&1; then
                 dns_failures=0
-                log "DNS recovered"
+                log "System DNS recovered"
             fi
         fi
     fi

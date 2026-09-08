@@ -16,6 +16,8 @@ PIDFILE="/run/pdanet-linux-usb.pid"
 LOGFILE="/tmp/pdanet-linux-usb.log"
 WATCHDOG="$PROJECT_DIR/scripts/pdanet-watchdog.sh"
 WATCHDOG_PIDFILE="/run/pdanet-linux-watchdog.pid"
+DNS_HELPER="$PROJECT_DIR/scripts/pdanet-dns.sh"
+PACKAGEKIT_FIX="$PROJECT_DIR/scripts/pdanet-packagekit-route-mode.sh"
 
 if [[ $EUID -ne 0 ]]; then
     echo -e "${RED}Error: This command must run as root.${NC}"
@@ -141,19 +143,17 @@ fi
 
 echo -e "${GREEN}✓${NC} PdaNet protocol connected, interface pdanet0 is active"
 
-# Prefer public DNS through the PdaNet tunnel. Hotel/guest WiFi commonly hands
-# out a private gateway as DNS, which becomes unreachable after pdanet0 takes
-# over the default route. Route DNS on the TUN link instead of leaking it over WiFi.
-if command -v resolvectl >/dev/null 2>&1 && resolvectl status >/dev/null 2>&1; then
-    resolvectl dns pdanet0 1.1.1.1 1.0.0.1 8.8.8.8 >/dev/null 2>&1 || true
-    resolvectl domain pdanet0 '~.' >/dev/null 2>&1 || true
-    resolvectl default-route pdanet0 yes >/dev/null 2>&1 || true
-    resolvectl flush-caches >/dev/null 2>&1 || true
+# Put the system resolver on the same path as pdanet0. Browsers can appear to
+# work through DoH while apt/PackageKit still fail if the OS resolver points at
+# a stale WiFi DNS server, so use the dedicated resolver helper here.
+if [[ -x "$DNS_HELPER" ]]; then
+    "$DNS_HELPER" apply || true
 fi
 
 echo -e "${YELLOW}[4/4]${NC} Verifying traffic through the phone..."
 if ! ip route get 1.1.1.1 2>/dev/null | grep -q 'dev pdanet0'; then
     echo -e "${RED}Error: PdaNet default route was not installed.${NC}"
+    [[ -x "$DNS_HELPER" ]] && "$DNS_HELPER" restore || true
     kill "$TUN_PID" 2>/dev/null || true
     rm -f "$PIDFILE"
     exit 1
@@ -171,6 +171,7 @@ if [[ "$TRANSPORT_OK" != true ]]; then
     echo -e "${RED}Error: PdaNet connected to the phone, but the phone is not passing Internet traffic.${NC}"
     echo "Open PdaNet+ on the phone, toggle USB Tether off and back on, then retry."
     cat "$LOGFILE"
+    [[ -x "$DNS_HELPER" ]] && "$DNS_HELPER" restore || true
     kill "$TUN_PID" 2>/dev/null || true
     rm -f "$PIDFILE"
     ip link del pdanet0 >/dev/null 2>&1 || true
@@ -179,22 +180,29 @@ fi
 
 echo -e "${GREEN}✓${NC} Raw Internet traffic verified through PdaNet+"
 
-# Verify name resolution separately so the GUI never reports Connected while
-# browsers are unusable because of stale guest-WiFi DNS.
+# Verify the same system resolver used by apt and PackageKit, not just browser
+# traffic. If it is still broken, force the resolver helper to apply its static
+# fallback before giving up.
 DNS_OK=false
 for _ in 1 2 3; do
-    if getent ahostsv4 example.com >/dev/null 2>&1; then
+    if [[ -x "$DNS_HELPER" ]] && "$DNS_HELPER" check; then
         DNS_OK=true
         break
     fi
-    command -v resolvectl >/dev/null 2>&1 && resolvectl flush-caches >/dev/null 2>&1 || true
+    [[ -x "$DNS_HELPER" ]] && "$DNS_HELPER" apply || true
     sleep 1
- done
+done
 if [[ "$DNS_OK" == true ]]; then
-    echo -e "${GREEN}✓${NC} DNS resolution verified"
+    echo -e "${GREEN}✓${NC} System DNS verified for apt and PackageKit"
+    if [[ -x "$PACKAGEKIT_FIX" ]]; then
+        "$PACKAGEKIT_FIX" || true
+    fi
+    command -v systemctl >/dev/null 2>&1 && systemctl restart packagekit.service >/dev/null 2>&1 || true
+    command -v nmcli >/dev/null 2>&1 && nmcli networking connectivity check >/dev/null 2>&1 || true
 else
-    echo -e "${RED}Error: PdaNet traffic works, but DNS could not be configured.${NC}"
-    echo "The connection was not marked successful because browsers would not work reliably."
+    echo -e "${RED}Error: PdaNet traffic works, but system DNS could not be configured.${NC}"
+    echo "The connection was not marked successful because apt and Software Manager would not work reliably."
+    [[ -x "$DNS_HELPER" ]] && "$DNS_HELPER" restore || true
     kill "$TUN_PID" 2>/dev/null || true
     rm -f "$PIDFILE"
     ip link del pdanet0 >/dev/null 2>&1 || true
