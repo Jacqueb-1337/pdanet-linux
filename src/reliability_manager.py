@@ -78,9 +78,8 @@ class ReliabilityManager:
         
         # Network diagnostic configuration
         self.diagnostic_targets = [
-            "8.8.8.8",      # Google DNS
-            "1.1.1.1",      # Cloudflare DNS
-            "208.67.222.222" # OpenDNS
+            "1.1.1.1",      # Cloudflare, HTTPS-capable direct IP
+            "1.0.0.1",      # Cloudflare secondary, HTTPS-capable direct IP
         ]
         self.diagnostic_timeout = 10  # seconds
         
@@ -150,10 +149,13 @@ class ReliabilityManager:
         self.last_health_check = time.time()
         
         try:
-            # Run parallel diagnostics
+            # PdaNet's USB tunnel carries normal IP traffic but ICMP echo is not
+            # guaranteed. Treating failed pings as a dead connection caused false
+            # CRITICAL states and pointless recovery loops. Probe HTTPS directly
+            # through the tunnel instead.
             futures = []
             for target in self.diagnostic_targets[:2]:  # Limit to 2 for speed
-                future = self.executor.submit(self._run_ping_diagnostic, target)
+                future = self.executor.submit(self._run_http_diagnostic, target)
                 futures.append(future)
             
             # Collect results with timeout
@@ -184,16 +186,16 @@ class ReliabilityManager:
             avg_packet_loss = sum(d.packet_loss_percent for d in successful_tests) / len(successful_tests)
             success_rate = len(successful_tests) / len(diagnostics) * 100
             
-            # Determine health level
+            # Determine health level. HTTPS setup latency is naturally much
+            # higher than ICMP RTT, so use thresholds appropriate for a real
+            # application request instead of ping thresholds.
             if success_rate < 50:
                 return ConnectionHealth.CRITICAL
-            elif avg_latency > 500 or avg_packet_loss > 10:
-                return ConnectionHealth.CRITICAL
-            elif avg_latency > 200 or avg_packet_loss > 5:
+            elif success_rate < 100 or avg_latency > 3000:
                 return ConnectionHealth.POOR
-            elif avg_latency > 100 or avg_packet_loss > 3:
+            elif avg_latency > 1500:
                 return ConnectionHealth.FAIR
-            elif avg_latency > 50 or avg_packet_loss > 1:
+            elif avg_latency > 700:
                 return ConnectionHealth.GOOD
             else:
                 return ConnectionHealth.EXCELLENT
@@ -202,6 +204,40 @@ class ReliabilityManager:
             self.logger.error(f"Health check failed: {e}")
             return ConnectionHealth.UNKNOWN
     
+    def _run_http_diagnostic(self, target: str) -> Optional[NetworkDiagnostic]:
+        """Probe Internet reachability with HTTPS instead of ICMP ping."""
+        try:
+            url = f"https://{target}/cdn-cgi/trace" if target in {"1.1.1.1", "1.0.0.1"} else f"https://{target}/"
+            started = time.monotonic()
+            result = subprocess.run(
+                [
+                    "curl", "-k", "-sS", "-o", "/dev/null",
+                    "--connect-timeout", "3", "--max-time", "6", url,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=8,
+            )
+            elapsed_ms = (time.monotonic() - started) * 1000.0
+            return NetworkDiagnostic(
+                timestamp=time.time(),
+                test_type="https",
+                target=target,
+                success=result.returncode == 0,
+                latency_ms=elapsed_ms if result.returncode == 0 else 0.0,
+                packet_loss_percent=0.0 if result.returncode == 0 else 100.0,
+                error_message=result.stderr.strip() if result.returncode != 0 else "",
+            )
+        except Exception as e:
+            return NetworkDiagnostic(
+                timestamp=time.time(),
+                test_type="https",
+                target=target,
+                success=False,
+                packet_loss_percent=100.0,
+                error_message=str(e),
+            )
+
     def _run_ping_diagnostic(self, target: str) -> Optional[NetworkDiagnostic]:
         """Run ping diagnostic against target"""
         try:

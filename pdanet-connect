@@ -115,15 +115,63 @@ fi
 
 echo -e "${GREEN}✓${NC} PdaNet protocol connected, interface pdanet0 is active"
 
+# Prefer public DNS through the PdaNet tunnel. Hotel/guest WiFi commonly hands
+# out a private gateway as DNS, which becomes unreachable after pdanet0 takes
+# over the default route. Route DNS on the TUN link instead of leaking it over WiFi.
+if command -v resolvectl >/dev/null 2>&1 && resolvectl status >/dev/null 2>&1; then
+    resolvectl dns pdanet0 1.1.1.1 1.0.0.1 8.8.8.8 >/dev/null 2>&1 || true
+    resolvectl domain pdanet0 '~.' >/dev/null 2>&1 || true
+    resolvectl default-route pdanet0 yes >/dev/null 2>&1 || true
+    resolvectl flush-caches >/dev/null 2>&1 || true
+fi
+
 echo -e "${YELLOW}[4/4]${NC} Verifying traffic through the phone..."
-if ip route get 1.1.1.1 2>/dev/null | grep -q 'dev pdanet0'; then
-    if curl -k -sS --connect-timeout 8 --max-time 12 https://1.1.1.1/cdn-cgi/trace >/dev/null 2>&1; then
-        echo -e "${GREEN}✓${NC} Internet traffic verified through PdaNet+"
-    else
-        echo -e "${YELLOW}Warning: Tunnel is active, but the internet verification request failed.${NC}"
-    fi
-else
+if ! ip route get 1.1.1.1 2>/dev/null | grep -q 'dev pdanet0'; then
     echo -e "${RED}Error: PdaNet default route was not installed.${NC}"
+    kill "$TUN_PID" 2>/dev/null || true
+    rm -f "$PIDFILE"
+    exit 1
+fi
+
+TRANSPORT_OK=false
+for _ in 1 2 3; do
+    if curl -k -sS --interface pdanet0 --connect-timeout 4 --max-time 8 https://1.1.1.1/cdn-cgi/trace >/dev/null 2>&1; then
+        TRANSPORT_OK=true
+        break
+    fi
+    sleep 1
+done
+if [[ "$TRANSPORT_OK" != true ]]; then
+    echo -e "${RED}Error: PdaNet connected to the phone, but the phone is not passing Internet traffic.${NC}"
+    echo "Open PdaNet+ on the phone, toggle USB Tether off and back on, then retry."
+    cat "$LOGFILE"
+    kill "$TUN_PID" 2>/dev/null || true
+    rm -f "$PIDFILE"
+    ip link del pdanet0 >/dev/null 2>&1 || true
+    exit 1
+fi
+
+echo -e "${GREEN}✓${NC} Raw Internet traffic verified through PdaNet+"
+
+# Verify name resolution separately so the GUI never reports Connected while
+# browsers are unusable because of stale guest-WiFi DNS.
+DNS_OK=false
+for _ in 1 2 3; do
+    if getent ahostsv4 example.com >/dev/null 2>&1; then
+        DNS_OK=true
+        break
+    fi
+    command -v resolvectl >/dev/null 2>&1 && resolvectl flush-caches >/dev/null 2>&1 || true
+    sleep 1
+ done
+if [[ "$DNS_OK" == true ]]; then
+    echo -e "${GREEN}✓${NC} DNS resolution verified"
+else
+    echo -e "${RED}Error: PdaNet traffic works, but DNS could not be configured.${NC}"
+    echo "The connection was not marked successful because browsers would not work reliably."
+    kill "$TUN_PID" 2>/dev/null || true
+    rm -f "$PIDFILE"
+    ip link del pdanet0 >/dev/null 2>&1 || true
     exit 1
 fi
 
