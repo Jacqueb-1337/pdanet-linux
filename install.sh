@@ -20,7 +20,7 @@ PROJECT_DIR="$SCRIPT_DIR"
 echo -e "${BLUE}"
 echo "╔════════════════════════════════════════╗"
 echo "║   PdaNet Linux Client - Installer     ║"
-echo "║   USB Tethering for Linux Mint 22.2   ║"
+echo "║   USB Tethering for Linux Mint 22.x   ║"
 echo "╚════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -77,7 +77,7 @@ fi
 echo -e "${YELLOW}[2/7]${NC} Checking dependencies..."
 MISSING_PACKAGES=()
 for pkg in "${CORE_PACKAGES[@]}"; do
-    if dpkg -l | grep -q "^ii  $pkg "; then
+    if [[ "$(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null || true)" == "install ok installed" ]]; then
         echo "  ✓ $pkg already installed"
     elif [[ "$OFFLINE_MODE" == true ]]; then
         echo -e "  ${RED}✗${NC} $pkg is missing from the offline installation"
@@ -98,9 +98,9 @@ fi
 
 # AppIndicator - try both old Ubuntu and new Debian packages
 echo "  Checking system tray support..."
-if dpkg -l | grep -q "^ii  gir1.2-appindicator3-0.1 "; then
+if [[ "$(dpkg-query -W -f='${Status}' gir1.2-appindicator3-0.1 2>/dev/null || true)" == "install ok installed" ]]; then
     echo "  ✓ gir1.2-appindicator3-0.1 already installed (Ubuntu)"
-elif dpkg -l | grep -q "^ii  gir1.2-ayatanaappindicator3-0.1 "; then
+elif [[ "$(dpkg-query -W -f='${Status}' gir1.2-ayatanaappindicator3-0.1 2>/dev/null || true)" == "install ok installed" ]]; then
     echo "  ✓ gir1.2-ayatanaappindicator3-0.1 already installed (Debian)"
 elif [[ "$OFFLINE_MODE" == true ]]; then
     echo -e "  ${YELLOW}⚠${NC} System tray package is not installed"
