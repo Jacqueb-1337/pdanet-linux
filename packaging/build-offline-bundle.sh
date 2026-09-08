@@ -140,8 +140,11 @@ cat > "$RUN_FILE" <<'EOF'
 set -Eeuo pipefail
 
 if [[ $EUID -ne 0 ]]; then
-    echo "Run this offline installer with sudo:" >&2
-    echo "  sudo $0" >&2
+    if command -v pkexec >/dev/null 2>&1; then
+        exec pkexec /usr/bin/bash "$0" "$@"
+    fi
+    echo "Administrator access is required to install PdaNet Linux." >&2
+    echo "Run this file as administrator, or use: sudo bash $0" >&2
     exit 1
 fi
 
